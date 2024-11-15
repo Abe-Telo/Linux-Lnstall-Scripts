@@ -158,10 +158,21 @@ fi
 
 # Create Apache virtual host for WordPress
 VHOST_CONF_PATH="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
-read -p "Virtual host configuration for ${DOMAIN_NAME} already exists. Do you want to replace it? (y/N): " REPLACE_VHOST
-REPLACE_VHOST=${REPLACE_VHOST:-n}
-if [ ! -f "$VHOST_CONF_PATH" ] || [[ "$REPLACE_VHOST" =~ ^[Yy]$ ]]; then
-    echo "Creating or replacing virtual host configuration for ${DOMAIN_NAME}."
+if [ -f "$VHOST_CONF_PATH" ]; then
+    echo "Virtual host configuration for ${DOMAIN_NAME} already exists."
+    read -p "Do you want to replace it? (y/N): " REPLACE_VHOST
+    REPLACE_VHOST=${REPLACE_VHOST:-n}
+    if [[ "$REPLACE_VHOST" =~ ^[Yy]$ ]]; then
+        echo "Replacing the existing virtual host configuration for ${DOMAIN_NAME}."
+    else
+        echo "Keeping the existing virtual host configuration."
+    fi
+else
+    echo "Creating virtual host configuration for ${DOMAIN_NAME}."
+    REPLACE_VHOST="y"
+fi
+
+if [[ "$REPLACE_VHOST" =~ ^[Yy]$ ]]; then
     sudo tee $VHOST_CONF_PATH > /dev/null <<EOF
 <VirtualHost *:80>
     ServerName ${DOMAIN_NAME}
@@ -177,8 +188,6 @@ if [ ! -f "$VHOST_CONF_PATH" ] || [[ "$REPLACE_VHOST" =~ ^[Yy]$ ]]; then
     CustomLog \${APACHE_LOG_DIR}/access.log combined
 </VirtualHost>
 EOF
-else
-    echo "Keeping the existing virtual host configuration."
 fi
 
 # Disable default Apache site
