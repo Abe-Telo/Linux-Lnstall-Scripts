@@ -16,46 +16,67 @@ sudo systemctl start mariadb
 sudo systemctl enable mariadb
 
 # Secure MariaDB Installation
-# Generate a secure root password
+# Check if MariaDB root password is already set
 ROOT_PASSWORD=$(openssl rand -base64 32)
+ROOT_PASSWORD_EXISTS=$(sudo mysql -u root -e "SELECT 1 FROM mysql.user WHERE user='root' AND authentication_string != '';" 2>/dev/null | grep 1)
 
-sudo apt-get install expect -y
-SECURE_MYSQL=$(expect -c "
-set timeout 10
-spawn sudo mysql_secure_installation
-expect \"Enter current password for root (enter for none):\"
-send \"\r\"
-expect \"Switch to unix_socket authentication \[Y/n\]\"
-send \"n\r\"
-expect \"Change the root password? \[Y/n\]\"
-send \"y\r\"
-expect \"New password:\"
-send \"$ROOT_PASSWORD\r\"
-expect \"Re-enter new password:\"
-send \"$ROOT_PASSWORD\r\"
-expect \"Remove anonymous users? \[Y/n\]\"
-send \"y\r\"
-expect \"Disallow root login remotely? \[Y/n\]\"
-send \"y\r\"
-expect \"Remove test database and access to it? \[Y/n\]\"
-send \"y\r\"
-expect \"Reload privilege tables now? \[Y/n\]\"
-send \"y\r\"
-expect eof
-")
-echo "$SECURE_MYSQL"
-
+if [ -z "$ROOT_PASSWORD_EXISTS" ]; then
+    echo "Securing MariaDB installation."
+    sudo apt-get install expect -y
+    SECURE_MYSQL=$(expect -c "
+    set timeout 10
+    spawn sudo mysql_secure_installation
+    expect \"Enter current password for root (enter for none):\"
+    send \"\r\"
+    expect \"Switch to unix_socket authentication \[Y/n\]\"
+    send \"n\r\"
+    expect \"Change the root password? \[Y/n\]\"
+    send \"y\r\"
+    expect \"New password:\"
+    send \"$ROOT_PASSWORD\r\"
+    expect \"Re-enter new password:\"
+    send \"$ROOT_PASSWORD\r\"
+    expect \"Remove anonymous users? \[Y/n\]\"
+    send \"y\r\"
+    expect \"Disallow root login remotely? \[Y/n\]\"
+    send \"y\r\"
+    expect \"Remove test database and access to it? \[Y/n\]\"
+    send \"y\r\"
+    expect \"Reload privilege tables now? \[Y/n\]\"
+    send \"y\r\"
+    expect eof
+    ")
+    echo "$SECURE_MYSQL"
+else
+    echo "MariaDB root password is already set. Skipping secure installation."
+fi
 
 # Check if log file exists and retrieve existing credentials if available
 DB_LOG_FILE="/root/db_log.txt"
 DB_KEY="$(echo ${DOMAIN_NAME} | tr '.' '_')"
-if [ -f "${DB_LOG_FILE}" ] && grep -q "${DB_KEY}" "${DB_LOG_FILE}"; then
-    echo "Using existing database credentials from log file."
+if [ -f "${DB_LOG_FILE}" ] && grep -q "${DB_KEY}" "${DB_LOG_FILE}"; then 
+    echo -e "\033[1;32m- Using existing database credentials from log file.\033[0m"  #Green
     DB_NAME=$(grep "${DB_KEY}_DB_NAME" ${DB_LOG_FILE} | cut -d '=' -f2)
     DB_USER=$(grep "${DB_KEY}_DB_USER" ${DB_LOG_FILE} | cut -d '=' -f2)
     DB_PASSWORD=$(grep "${DB_KEY}_DB_PASSWORD" ${DB_LOG_FILE} | cut -d '=' -f2)
+
+    # Check if database and user exist in MySQL
+    DB_EXISTS=$(sudo mysql -u root -e "SHOW DATABASES LIKE '${DB_NAME}';" | grep "${DB_NAME}")
+    USER_EXISTS=$(sudo mysql -u root -e "SELECT User FROM mysql.user WHERE User='${DB_USER}';" | grep "${DB_USER}")
+
+    if [ -n "$DB_EXISTS" ] && [ -n "$USER_EXISTS" ]; then
+        echo -e "\033[1;32m- Database and user already exist. Skipping creation.\033[0m"  #Green
+    else
+        echo -e "\033[1;32m- Database or user does not exist. Proceeding with creation.\033[0m"  # Green
+        # Create database and user
+        sudo mysql -u root -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;"
+        sudo mysql -u root -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
+        sudo mysql -u root -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
+        sudo mysql -u root -e "FLUSH PRIVILEGES;"
+    fi
 else
     # Create MySQL database and user for WordPress with randomized names and strong password
+    echo -e "\033[1;32m-  Create MySQL database and user for WordPress with randomized names and strong password.\033[0m"  #Green
     DB_NAME="${DB_KEY}_db_$(openssl rand -hex 4)"
     DB_USER="${DB_KEY}_user_$(openssl rand -hex 4)"
     DB_PASSWORD=$(openssl rand -base64 32)
@@ -70,6 +91,9 @@ else
     sudo mysql -u root -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
     sudo mysql -u root -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
     sudo mysql -u root -e "FLUSH PRIVILEGES;"
+    echo -e "\033[1;31m- DB_NAME=${DB_NAME}\033[0m"
+    echo -e "\033[1;31m- DB_USER=${DB_USER}\033[0m"
+    echo -e "\033[1;31m- DB_PASSWORD=${DB_PASSWORD}\033[0m"
 fi
 
 # Download and set up WordPress
@@ -93,49 +117,94 @@ if [ -d "/var/www/${DOMAIN_NAME}" ]; then
         sudo rm -rf /var/www/${DOMAIN_NAME}
         echo "Unzipping WordPress to /var/www/${DOMAIN_NAME}"
         unzip -o latest.zip
+        sudo rsync -av wordpress/ /var/www/${DOMAIN_NAME}/
     else
         echo "Skipping WordPress installation as per user request. Continuing with other tasks."
     fi
 else
     echo "No existing WordPress installation found. Proceeding with unzip."
     unzip -o latest.zip
+    sudo rsync -av wordpress/ /var/www/${DOMAIN_NAME}/
 fi
-
-sudo rsync -av wordpress/ /var/www/${DOMAIN_NAME}/
-
 
 # Set permissions for WordPress directory
 echo "Setting chown and permissions"
 sudo chown -R www-data:www-data /var/www/${DOMAIN_NAME}
 sudo chmod -R 755 /var/www/${DOMAIN_NAME}
 
-
 # Move wp-config-sample.php to wp-config.php and set database info
 cd /var/www/${DOMAIN_NAME}
 if [ -f wp-config-sample.php ]; then
-    sudo cp wp-config-sample.php wp-config.php
+    if [ ! -f wp-config.php ]; then
+        sudo cp wp-config-sample.php wp-config.php
+    fi
 else
     echo "Error: wp-config-sample.php not found."
     exit 1
 fi
 
 # Add Logic to check if wp-config.php already contains the required database credentials
-if ! grep -q "define( 'DB_NAME', '${DB_NAME}'" wp-config.php; then
-    DB_NAME_ESCAPED=$(printf '%s
-' "$DB_NAME" | sed -e 's/[\/&]/\\&/g')
-    sudo sed -i "s/define( 'DB_NAME', 'database_name_here' )/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_NAME in wp-config.php"; exit 1; }
-fi
-if ! grep -q "define( 'DB_USER', '${DB_USER}'" wp-config.php; then
-    DB_USER_ESCAPED=$(printf '%s
-' "$DB_USER" | sed -e 's/[\/&]/\\&/g')
-    sudo sed -i "s/define( 'DB_USER', 'username_here' )/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_USER in wp-config.php"; exit 1; }
-fi
-if ! grep -q "define( 'DB_PASSWORD', '${DB_PASSWORD}'" wp-config.php; then
-    DB_PASSWORD_ESCAPED=$(printf '%s
-' "$DB_PASSWORD" | sed -e 's/[\/&]/\\&/g')
-    sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
-fi
+# If DB INFO EXISTS in db_log.txt then match it and see if it's also in wp-config.php
+if grep -q "${DB_KEY}_DB_NAME" ${DB_LOG_FILE}; then
+    DB_NAME_LOG=$(grep "${DB_KEY}_DB_NAME" ${DB_LOG_FILE} | cut -d '=' -f2)
+    DB_USER_LOG=$(grep "${DB_KEY}_DB_USER" ${DB_LOG_FILE} | cut -d '=' -f2)
+    DB_PASSWORD_LOG=$(grep "${DB_KEY}_DB_PASSWORD" ${DB_LOG_FILE} | cut -d '=' -f2)
 
+    # Check if wp-config.php has default values or no values
+    if grep -qE "define\( 'DB_NAME', 'database_name_here' \)|define\( 'DB_NAME', '' \)" wp-config.php && \
+       grep -qE "define\( 'DB_USER', 'username_here' \)|define\( 'DB_USER', '' \)" wp-config.php && \
+       grep -qE "define\( 'DB_PASSWORD', 'password_here' \)|define\( 'DB_PASSWORD', '' \)" wp-config.php; then
+        echo "Found Default or No Values in wp-config.php."
+        echo "Proceed to add DB info to wp-config.php as there are default or empty values."
+        # Add the new DB info to wp-config.php
+        DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME_LOG" | sed -e 's/[\/&]/\\&/g')
+        DB_USER_ESCAPED=$(printf '%s' "$DB_USER_LOG" | sed -e 's/[\/&]/\\&/g')
+        DB_PASSWORD_ESCAPED=$(printf '%s' "$DB_PASSWORD_LOG" | sed -e 's/[\/&]/\\&/g')
+        sudo sed -i "s/define( 'DB_NAME', 'database_name_here' )/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_NAME in wp-config.php"; exit 1; }
+        sudo sed -i "s/define( 'DB_USER', 'username_here' )/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_USER in wp-config.php"; exit 1; }
+        sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
+    elif grep -q "define( 'DB_NAME', '${DB_NAME_LOG}'" wp-config.php && \
+         grep -q "define( 'DB_USER', '${DB_USER_LOG}'" wp-config.php && \
+         grep -q "define( 'DB_PASSWORD', '${DB_PASSWORD_LOG}'" wp-config.php; then
+        echo "Database credentials already exist in wp-config.php and match the log file."
+    else
+        echo "Conflict detected between wp-config.php and db_log.txt."
+        echo "Current wp-config.php values:"
+        grep "define( 'DB_NAME'" wp-config.php
+        grep "define( 'DB_USER'" wp-config.php
+        grep "define( 'DB_PASSWORD'" wp-config.php
+        echo "Log file values:"
+        echo "DB_NAME=${DB_NAME_LOG}"
+        echo "DB_USER=${DB_USER_LOG}"
+        echo "DB_PASSWORD=${DB_PASSWORD_LOG}"
+        read -p "Keep the values in wp-config.php or replace with log file values? (Keep/Replace, default is Keep): " REPLACE_VALUES
+        REPLACE_VALUES=${REPLACE_VALUES:-Keep}
+        if [[ "$REPLACE_VALUES" =~ ^[Rr]eplace$ ]]; then
+            DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME_LOG" | sed -e 's/[\/&]/\\&/g')
+            DB_USER_ESCAPED=$(printf '%s' "$DB_USER_LOG" | sed -e 's/[\/&]/\\&/g')
+            DB_PASSWORD_ESCAPED=$(printf '%s' "$DB_PASSWORD_LOG" | sed -e 's/[\/&]/\\&/g')
+            sudo sed -i "s/define( 'DB_NAME', .*)/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php
+            sudo sed -i "s/define( 'DB_USER', .*)/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php
+            sudo sed -i "s/define( 'DB_PASSWORD', .*)/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php
+        else
+            echo "Keeping existing values in wp-config.php."
+        fi
+    fi
+else
+    # If there are no existing entries, add them
+    if ! grep -q "define( 'DB_NAME', '${DB_NAME}'" wp-config.php; then
+        DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME" | sed -e 's/[\/&]/\\&/g')
+        sudo sed -i "s/define( 'DB_NAME', 'database_name_here' )/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_NAME in wp-config.php"; exit 1; }
+    fi
+    if ! grep -q "define( 'DB_USER', '${DB_USER}'" wp-config.php; then
+        DB_USER_ESCAPED=$(printf '%s' "$DB_USER" | sed -e 's/[\/&]/\\&/g')
+        sudo sed -i "s/define( 'DB_USER', 'username_here' )/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_USER in wp-config.php"; exit 1; }
+    fi
+    if ! grep -q "define( 'DB_PASSWORD', '${DB_PASSWORD}'" wp-config.php; then
+        DB_PASSWORD_ESCAPED=$(printf '%s' "$DB_PASSWORD" | sed -e 's/[\/&]/\\&/g')
+        sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
+    fi
+fi
 
 # Configure PHP settings for WordPress
 # Check current values and only update if necessary
@@ -206,7 +275,6 @@ if [ ! -L /usr/bin/certbot ] || [ "$(readlink /usr/bin/certbot)" != "/snap/bin/c
     sudo ln -sf /snap/bin/certbot /usr/bin/certbot
 fi
 echo "Certbot symbolic link already exists, skipping creation."
-
 
 # Obtain SSL certificate
 if [ -f /etc/letsencrypt/live/${DOMAIN_NAME}/cert.pem ]; then
