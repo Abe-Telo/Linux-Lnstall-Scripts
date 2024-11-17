@@ -21,7 +21,7 @@ ROOT_PASSWORD=$(openssl rand -base64 32)
 ROOT_PASSWORD_EXISTS=$(sudo mysql -u root -e "SELECT 1 FROM mysql.user WHERE user='root' AND authentication_string != '';" 2>/dev/null | grep 1)
 
 if [ -z "$ROOT_PASSWORD_EXISTS" ]; then
-    echo "Securing MariaDB installation."
+    echo -e "[1;34mSecuring MariaDB installation.[0m"  # Blue
     sudo apt-get install expect -y
     SECURE_MYSQL=$(expect -c "
     set timeout 10
@@ -33,9 +33,9 @@ if [ -z "$ROOT_PASSWORD_EXISTS" ]; then
     expect \"Change the root password? \[Y/n\]\"
     send \"y\r\"
     expect \"New password:\"
-    send \"$ROOT_PASSWORD\r\"
+    send "$ROOT_PASSWORD\r"
     expect \"Re-enter new password:\"
-    send \"$ROOT_PASSWORD\r\"
+    send "$ROOT_PASSWORD\r"
     expect \"Remove anonymous users? \[Y/n\]\"
     send \"y\r\"
     expect \"Disallow root login remotely? \[Y/n\]\"
@@ -48,7 +48,7 @@ if [ -z "$ROOT_PASSWORD_EXISTS" ]; then
     ")
     echo "$SECURE_MYSQL"
 else
-    echo "MariaDB root password is already set. Skipping secure installation."
+    echo -e "[1;33mMariaDB root password is already set. Skipping secure installation.[0m"  # Yellow
 fi
 
 # Check if log file exists and retrieve existing credentials if available
@@ -79,7 +79,7 @@ else
     echo -e "\033[1;32m-  Create MySQL database and user for WordPress with randomized names and strong password.\033[0m"  #Green
     DB_NAME="${DB_KEY}_db_$(openssl rand -hex 4)"
     DB_USER="${DB_KEY}_user_$(openssl rand -hex 4)"
-    DB_PASSWORD=$(openssl rand -base64 32)
+    DB_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=')
 
     # Log database credentials
     echo "${DB_KEY}_DB_NAME=${DB_NAME}" >> ${DB_LOG_FILE}
@@ -88,7 +88,7 @@ else
 
     # Create database and user
     sudo mysql -u root -e "CREATE DATABASE \`${DB_NAME}\`;"
-    sudo mysql -u root -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
+    sudo mysql -u root -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';" || { echo "Error: Failed to create user. Password might contain unsupported characters."; exit 1; }
     sudo mysql -u root -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
     sudo mysql -u root -e "FLUSH PRIVILEGES;"
     echo -e "\033[1;31m- DB_NAME=${DB_NAME}\033[0m"
@@ -103,32 +103,32 @@ sudo apt-get install unzip -y
 
 if [ -d "/var/www/${DOMAIN_NAME}" ]; then
     if [ latest.zip -nt /var/www/${DOMAIN_NAME}/wp-config.php ]; then
-        echo "Newer WordPress version found. Proceeding with unzip."
+        echo -e "[1;34mNewer WordPress version found. Proceeding with unzip.[0m"  # Blue
         unzip -o latest.zip
     else
-        echo "The existing WordPress installation is already up-to-date. Skipping unzip."
+        echo -e "[1;32mThe existing WordPress installation is already up-to-date. Skipping unzip.[0m"  # Green
     fi
 
     read -p "Already found WordPress site installed for ${DOMAIN_NAME}. Do you want to replace it? (y/N): " REPLACE_WORDPRESS
     REPLACE_WORDPRESS=${REPLACE_WORDPRESS:-n}
     if [[ "$REPLACE_WORDPRESS" =~ ^[Yy]$ ]]; then
-        echo "Replacing the existing WordPress installation..."
-        echo "Removing /var/www/${DOMAIN_NAME}"
+        echo -e "[1;33mReplacing the existing WordPress installation...[0m"  # Yellow
+        echo -e "[1;31mRemoving /var/www/${DOMAIN_NAME}[0m"  # Red
         sudo rm -rf /var/www/${DOMAIN_NAME}
-        echo "Unzipping WordPress to /var/www/${DOMAIN_NAME}"
+        echo -e "[1;34mUnzipping WordPress to /var/www/${DOMAIN_NAME}[0m"  # Blue
         unzip -o latest.zip
         sudo rsync -av wordpress/ /var/www/${DOMAIN_NAME}/
     else
-        echo "Skipping WordPress installation as per user request. Continuing with other tasks."
+        echo -e "[1;33mSkipping WordPress installation as per user request. Continuing with other tasks.[0m"  # Yellow
     fi
 else
-    echo "No existing WordPress installation found. Proceeding with unzip."
+    echo -e "[1;34mNo existing WordPress installation found. Proceeding with unzip.[0m"  # Blue
     unzip -o latest.zip
     sudo rsync -av wordpress/ /var/www/${DOMAIN_NAME}/
 fi
 
 # Set permissions for WordPress directory
-echo "Setting chown and permissions"
+echo -e "[1;34mSetting chown and permissions[0m"  # Blue
 sudo chown -R www-data:www-data /var/www/${DOMAIN_NAME}
 sudo chmod -R 755 /var/www/${DOMAIN_NAME}
 
@@ -139,7 +139,7 @@ if [ -f wp-config-sample.php ]; then
         sudo cp wp-config-sample.php wp-config.php
     fi
 else
-    echo "Error: wp-config-sample.php not found."
+    echo -e "[1;31mError: wp-config-sample.php not found.[0m"  # Red
     exit 1
 fi
 
@@ -154,8 +154,8 @@ if grep -q "${DB_KEY}_DB_NAME" ${DB_LOG_FILE}; then
     if grep -qE "define\( 'DB_NAME', 'database_name_here' \)|define\( 'DB_NAME', '' \)" wp-config.php && \
        grep -qE "define\( 'DB_USER', 'username_here' \)|define\( 'DB_USER', '' \)" wp-config.php && \
        grep -qE "define\( 'DB_PASSWORD', 'password_here' \)|define\( 'DB_PASSWORD', '' \)" wp-config.php; then
-        echo "Found Default or No Values in wp-config.php."
-        echo "Proceed to add DB info to wp-config.php as there are default or empty values."
+        echo -e "[1;33mFound Default or No Values in wp-config.php.[0m"  # Yellow
+        echo -e "[1;34mProceed to add DB info to wp-config.php as there are default or empty values.[0m"  # Blue
         # Add the new DB info to wp-config.php
         DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME_LOG" | sed -e 's/[\/&]/\\&/g')
         DB_USER_ESCAPED=$(printf '%s' "$DB_USER_LOG" | sed -e 's/[\/&]/\\&/g')
@@ -166,9 +166,9 @@ if grep -q "${DB_KEY}_DB_NAME" ${DB_LOG_FILE}; then
     elif grep -q "define( 'DB_NAME', '${DB_NAME_LOG}'" wp-config.php && \
          grep -q "define( 'DB_USER', '${DB_USER_LOG}'" wp-config.php && \
          grep -q "define( 'DB_PASSWORD', '${DB_PASSWORD_LOG}'" wp-config.php; then
-        echo "Database credentials already exist in wp-config.php and match the log file."
+        echo -e "[1;32mDatabase credentials already exist in wp-config.php and match the log file.[0m"  # Green
     else
-        echo "Conflict detected between wp-config.php and db_log.txt."
+        echo -e "[1;31mConflict detected between wp-config.php and db_log.txt.[0m"  # Red
         echo "Current wp-config.php values:"
         grep "define( 'DB_NAME'" wp-config.php
         grep "define( 'DB_USER'" wp-config.php
@@ -187,7 +187,7 @@ if grep -q "${DB_KEY}_DB_NAME" ${DB_LOG_FILE}; then
             sudo sed -i "s/define( 'DB_USER', .*)/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php
             sudo sed -i "s/define( 'DB_PASSWORD', .*)/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php
         else
-            echo "Keeping existing values in wp-config.php."
+            echo -e "[1;32mKeeping existing values in wp-config.php.[0m"  # Green
         fi
     fi
 else
@@ -228,16 +228,16 @@ fi
 # Create Apache virtual host for WordPress
 VHOST_CONF_PATH="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
 if [ -f "$VHOST_CONF_PATH" ]; then
-    echo "Virtual host configuration for ${DOMAIN_NAME} already exists."
+    echo -e "[1;33mVirtual host configuration for ${DOMAIN_NAME} already exists.[0m"  # Yellow
     read -p "Do you want to replace it? (y/N): " REPLACE_VHOST
     REPLACE_VHOST=${REPLACE_VHOST:-n}
     if [[ "$REPLACE_VHOST" =~ ^[Yy]$ ]]; then
-        echo "Replacing the existing virtual host configuration for ${DOMAIN_NAME}."
+        echo -e "[1;33mReplacing the existing virtual host configuration for ${DOMAIN_NAME}.[0m"  # Yellow
     else
-        echo "Keeping the existing virtual host configuration."
+        echo -e "[1;32mKeeping the existing virtual host configuration.[0m"  # Green
     fi
 else
-    echo "Creating virtual host configuration for ${DOMAIN_NAME}."
+    echo -e "[1;34mCreating virtual host configuration for ${DOMAIN_NAME}.[0m"  # Blue
     REPLACE_VHOST="y"
 fi
 
@@ -274,33 +274,40 @@ sudo snap install --classic certbot
 if [ ! -L /usr/bin/certbot ] || [ "$(readlink /usr/bin/certbot)" != "/snap/bin/certbot" ]; then
     sudo ln -sf /snap/bin/certbot /usr/bin/certbot
 fi
-echo "Certbot symbolic link already exists, skipping creation."
+echo -e "[1;33mCertbot symbolic link already exists, skipping creation.[0m"  # Yellow
 
 # Obtain SSL certificate
 if [ -f /etc/letsencrypt/live/${DOMAIN_NAME}/cert.pem ]; then
-    echo "SSL certificate for ${DOMAIN_NAME} already exists, skipping Certbot setup."
+    echo -e "[1;32mSSL certificate for ${DOMAIN_NAME} already exists, skipping Certbot setup.[0m"  # Green
 else
     EMAIL_LOG_FILE="/root/email_log.txt"
     if [ -f "${EMAIL_LOG_FILE}" ]; then
         EMAIL_ADDRESS=$(cat ${EMAIL_LOG_FILE})
     else
     # Disclaimer for A record
-        echo "IMPORTANT: Make sure that your domain's A record is pointed to the IP address of this Linode server before proceeding with SSL setup."
+        echo -e "[1;33mIMPORTANT: Make sure that your domain's A record is pointed to the IP address of this Linode server before proceeding with SSL setup.[0m"  # Yellow
 
         read -p "Enter your email address for SSL certificate registration: " EMAIL_ADDRESS
         echo ${EMAIL_ADDRESS} > ${EMAIL_LOG_FILE}
     fi
-    read -p "Do you want to add both ${DOMAIN_NAME} and www.${DOMAIN_NAME} to the SSL certificate? (y/n): " ADD_WWW
-    if [[ "$ADD_WWW" =~ ^[Yy]$ ]]; then
-        sudo certbot --apache -d ${DOMAIN_NAME} -d www.${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL_ADDRESS} --redirect
+    read -p "Do you want to install an SSL certificate for ${DOMAIN_NAME}? (Y/n): " INSTALL_SSL
+    INSTALL_SSL=${INSTALL_SSL:-Y}
+    if [[ "$INSTALL_SSL" =~ ^[Yy]$ ]]; then
+        read -p "Do you want to add both ${DOMAIN_NAME} and www.${DOMAIN_NAME} to the SSL certificate? (Y/n): " ADD_WWW
+        ADD_WWW=${ADD_WWW:-y}
+        if [[ "$ADD_WWW" =~ ^[Yy]$ ]]; then
+            sudo certbot --apache -d ${DOMAIN_NAME} -d www.${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL_ADDRESS} --redirect
+        else
+            sudo certbot --apache -d ${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL_ADDRESS} --redirect
+        fi
     else
-        sudo certbot --apache -d ${DOMAIN_NAME} --non-interactive --agree-tos -m ${EMAIL_ADDRESS} --redirect
+        echo -e "[1;33mSkipping SSL certificate installation as per user request.[0m"  # Yellow
     fi
 fi
 
 # Instructions if SSL setup fails
-echo "If the SSL setup fails, you can manually attempt to obtain the SSL certificate by running the following command:"
+echo -e "[1;33mIf the SSL setup fails, you can manually attempt to obtain the SSL certificate by running the following command:[0m"  # Yellow
 echo "sudo certbot --apache"
 
 # Final output
-echo "WordPress installation complete. Please complete the setup via your web browser by navigating to http://${DOMAIN_NAME}"
+echo -e "[1;32mWordPress installation complete. Please complete the setup via your web browser by navigating to http://${DOMAIN_NAME}[0m"  # Green
