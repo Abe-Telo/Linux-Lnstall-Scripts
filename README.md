@@ -2,8 +2,17 @@
 
 To install WordPress, use this one-liner:
 
+V1.0 Stable Straight Forword wordpress install 
 ```bash
 curl -sLO https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/main/install_wordpress.sh && chmod +x install_wordpress.sh && sudo ./install_wordpress.sh
+```
+V2.0 Beta With Advance Help and custom install filters.
+```bash
+curl -sLO https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/main/install_wordpress.sh && chmod +x install_wordpress.sh && sudo ./install_wordpress.sh
+```
+For Usage in 2.0 Beta
+```
+sudo ./install_wordpress.sh -h
 ```
 
 This command will download and execute the script automatically, setting up WordPress with the necessary components for a tested on Debian 12. It is expected to work on other environments, including Debian and Ubuntu, but please test and confirm compatibility..
@@ -23,6 +32,7 @@ This script automates the installation and configuration of WordPress on a Debia
 5. **Downloads and Sets Up WordPress**: Downloads the latest version of WordPress, configures it, and sets appropriate file permissions.
 6. **Configures Apache Virtual Host**: Sets up an Apache virtual host to serve the WordPress site.
 7. **Configures SSL with Certbot**: Installs Certbot using Snap and sets up SSL for the domain.
+8. **Creates a Backup of worpress files:** Currently we only backup Wordpress files. (To implement DB Backups.)
 
 ## Installed Components
 
