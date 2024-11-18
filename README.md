@@ -17,7 +17,10 @@ sudo ./install_wordpress.sh -h
 
 This command will download and execute the script automatically, setting up WordPress with the necessary components for a tested on Debian 12. It is expected to work on other environments, including Debian and Ubuntu, but please test and confirm compatibility..
 
-## What It Does
+## Why was this script created?
+So others like myself can install multiple wordpress sited on a single server withn minutes. instead of looking for all the commands. 
+
+## What It Currently Does
 
 This script automates the installation and configuration of WordPress on a Debian 12 server (tested). It may also work on other environments, including Debian and Ubuntu.. It performs the following actions:
 
