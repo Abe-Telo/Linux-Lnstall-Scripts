@@ -20,7 +20,6 @@ echo -e "\033[1;33mAlternatively, use http://$PUBLIC_IP (Note: Certbot will not 
     echo "    --skip-package-install     Skip installing required packages"
     echo "    --skip-secure-mysql        Skip securing the MariaDB installation"
     echo "    --skip-db-creation         Skip database creation for WordPress"
-    echo "    --install-all              Sets the script to install evrything"
     echo ""
     echo "Backup Options:"
     echo "    -b                         Create a new backup"
@@ -50,14 +49,6 @@ while getopts ":brdsxuz-:" opt; do
                 certbot)
                     CERTBOT_INSTALL="${!OPTIND}"; OPTIND=$((OPTIND + 1))
                     ;;
-			    install-all)
-				    BACKUP_ACTION="b"
-                    SKIP_SYSTEM_UPDATE="false"
-					SKIP_PACKAGE_INSTALL="false"
-					SKIP_SECURE_MYSQL="false"
-					SKIP_DB_CREATION="false"
-                    ;;
-					
                 domain)
                     DOMAIN_NAME="${!OPTIND}"; OPTIND=$((OPTIND + 1))
                     ;;
@@ -110,8 +101,9 @@ fi
 # Log file for tracking actions
 LOG_FILE="/var/log/wp_setup.log"
 echo -e "All log files will be stored in ${LOG_FILE}"
-exec > >(tee -a <(while IFS= read -r line; do echo "$(date): $line"; done >> "$LOG_FILE")) 2>&1 
+@exec > >(tee -a <(while IFS= read -r line; do echo "$(date): $line"; done >> "$LOG_FILE")) 2>&1 
 #exec > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE.err" >&2)
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Function to validate domain name
 validate_domain_name() {
@@ -139,8 +131,76 @@ DB_KEY="$(echo ${DOMAIN_NAME} | tr '.' '_')"
 # Function to create a new backup
 create_backup() { 
     echo -e "\033[1;34mCreating backup of existing WordPress installation at ${BACKUP_DIR}\033[0m\n"  # Blue
-    sudo tar -czf "${BACKUP_DIR}" -C /var/www "${DOMAIN_NAME}" || { echo -e "\033[1;31mFailed to create backup. Exiting.\033[0m\n"; exit 1; }
-    echo -e "\033[1;32mBackup created successfully.\033[0m\n"  # Green
+    if [ -d "/var/www/${DOMAIN_NAME}" ]; then
+        tar -czf "${BACKUP_DIR}" -C /var/www "${DOMAIN_NAME}" --checkpoint=.100 || { echo -e "\033[1;31mFailed to create backup. Exiting.\033[0m\n"; exit 1; }
+        echo -e "\033[1;32mBackup created successfully.\033[0m\n"  # Green
+    else
+        echo -e "\033[1;31mDirectory /var/www/${DOMAIN_NAME} does not exist. Skipping backup.\033[0m\n"  # Red
+    fi
+}
+
+# Function to update wp-config.php with database credentials
+update_wp_config() {
+    if grep -q "${DB_KEY}_DB_NAME" ${DB_LOG_FILE}; then
+        DB_NAME_LOG=$(grep "${DB_KEY}_DB_NAME" ${DB_LOG_FILE} | cut -d '=' -f2)
+        DB_USER_LOG=$(grep "${DB_KEY}_DB_USER" ${DB_LOG_FILE} | cut -d '=' -f2)
+        DB_PASSWORD_LOG=$(grep "${DB_KEY}_DB_PASSWORD" ${DB_LOG_FILE} | cut -d '=' -f2)
+
+        # Check if wp-config.php has default values or no values
+        if grep -qE "define\( 'DB_NAME', 'database_name_here' \)|define\( 'DB_NAME', '' \)" wp-config.php && \
+           grep -qE "define\( 'DB_USER', 'username_here' \)|define\( 'DB_USER', '' \)" wp-config.php && \
+           grep -qE "define\( 'DB_PASSWORD', 'password_here' \)|define\( 'DB_PASSWORD', '' \)" wp-config.php; then
+            echo -e "\033[1;33mFound Default or No Values in wp-config.php.\033[0m"  # Yellow
+            echo -e "\033[1;34mProceed to add DB info to wp-config.php as there are default or empty values.\033[0m"  # Blue
+            # Add the new DB info to wp-config.php
+            DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME_LOG" | sed -e 's/[\/&]/\\&/g')
+            DB_USER_ESCAPED=$(printf '%s' "$DB_USER_LOG" | sed -e 's/[\/&]/\\&/g')
+            DB_PASSWORD_ESCAPED=$(printf '%s' "$DB_PASSWORD_LOG" | sed -e 's/[\/&]/\\&/g')
+            sudo sed -i "s/define( 'DB_NAME', 'database_name_here' )/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_NAME in wp-config.php"; exit 1; }
+            sudo sed -i "s/define( 'DB_USER', 'username_here' )/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_USER in wp-config.php"; exit 1; }
+            sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
+        elif grep -q "define( 'DB_NAME', '${DB_NAME_LOG}'" wp-config.php && \
+             grep -q "define( 'DB_USER', '${DB_USER_LOG}'" wp-config.php && \
+             grep -q "define( 'DB_PASSWORD', '${DB_PASSWORD_LOG}'" wp-config.php; then
+            echo -e "\033[1;32mDatabase credentials already exist in wp-config.php and match the log file.\033[0m"  # Green
+        else
+            echo -e "\033[1;31mConflict detected between wp-config.php and db_log.txt.\033[0m"  # Red
+            echo "Current wp-config.php values:"
+            grep "define( 'DB_NAME'" wp-config.php
+            grep "define( 'DB_USER'" wp-config.php
+            grep "define( 'DB_PASSWORD'" wp-config.php
+            echo "Log file values:"
+            echo "DB_NAME=${DB_NAME_LOG}"
+            echo "DB_USER=${DB_USER_LOG}"
+            echo "DB_PASSWORD=${DB_PASSWORD_LOG}"
+            read -p "Keep the values in wp-config.php or replace with log file values? (Keep/Replace, default is Keep): " REPLACE_VALUES
+            REPLACE_VALUES=${REPLACE_VALUES:-Keep}
+            if [[ "$REPLACE_VALUES" =~ ^[Rr]eplace$ ]]; then
+                DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME_LOG" | sed -e 's/[\/&]/\\&/g')
+                DB_USER_ESCAPED=$(printf '%s' "$DB_USER_LOG" | sed -e 's/[\/&]/\\&/g')
+                DB_PASSWORD_ESCAPED=$(printf '%s' "$DB_PASSWORD_LOG" | sed -e 's/[\/&]/\\&/g')
+                sudo sed -i "s/define( 'DB_NAME', .*)/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php
+                sudo sed -i "s/define( 'DB_USER', .*)/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php
+                sudo sed -i "s/define( 'DB_PASSWORD', .*)/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php
+            else
+                echo -e "\033[1;32mKeeping existing values in wp-config.php.\033[0m"  # Green
+            fi
+        fi
+    else
+        # If there are no existing entries, add them
+        if ! grep -q "define( 'DB_NAME', '${DB_NAME}'" wp-config.php; then
+            DB_NAME_ESCAPED=$(printf '%s' "$DB_NAME" | sed -e 's/[\/&]/\\&/g')
+            sudo sed -i "s/define( 'DB_NAME', 'database_name_here' )/define( 'DB_NAME', '${DB_NAME_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_NAME in wp-config.php"; exit 1; }
+        fi
+        if ! grep -q "define( 'DB_USER', '${DB_USER}'" wp-config.php; then
+            DB_USER_ESCAPED=$(printf '%s' "$DB_USER" | sed -e 's/[\/&]/\\&/g')
+            sudo sed -i "s/define( 'DB_USER', 'username_here' )/define( 'DB_USER', '${DB_USER_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_USER in wp-config.php"; exit 1; }
+        fi
+        if ! grep -q "define( 'DB_PASSWORD', '${DB_PASSWORD}'" wp-config.php; then
+            DB_PASSWORD_ESCAPED=$(printf '%s' "$DB_PASSWORD" | sed -e 's/[\/&]/\\&/g')
+            sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
+        fi
+    fi
 }
 
 # Update and upgrade the system
@@ -230,7 +290,7 @@ if [ "$SKIP_DB_CREATION" != "true" ]; then
         fi
     else
         # Create MySQL database and user for WordPress with randomized names and strong password
-        echo -e "\033[1;32m- Create MySQL database and user for WordPress with randomized names and strong password.\033[0m\n"  #Green
+        echo -e "\033[1;32m- Create MySQL database and user for WordPress with randomized names and strong password.\033[0m"  #Green
         DB_NAME="${DB_KEY}_db_$(openssl rand -hex 4)"
         DB_USER="${DB_KEY}_user_$(openssl rand -hex 4)"
         DB_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=')
@@ -244,16 +304,18 @@ if [ "$SKIP_DB_CREATION" != "true" ]; then
         sudo mysql -u root -e "CREATE DATABASE \`${DB_NAME}\`;" || { echo -e "\033[1;31mFailed to create database. Exiting.\033[0m\n"; exit 1; }
         sudo mysql -u root -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';" || { echo "Error: Failed to create user. Password might contain unsupported characters."; exit 1; }
         sudo mysql -u root -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';" || { echo -e "\033[1;31mFailed to grant privileges. Exiting.\033[0m\n"; exit 1; }
-        sudo mysql -u root -e "FLUSH PRIVILEGES;" || { echo -e "\033[1;31mFailed to flush privileges. Exiting.\033[0m\n"; exit 1; }
-        echo -e "\033[1;31m- DB_NAME=${DB_NAME}\033[0m\n"
-        echo -e "\033[1;31m- DB_USER=${DB_USER}\033[0m\n"
+        sudo mysql -u root -e "FLUSH PRIVILEGES;" || { echo -e "\033[1;31mFailed to flush privileges. Exiting.\033[0m"; exit 1; }
+		
+
+        echo -e "\033[1;31m- DB_NAME=${DB_NAME}\033[0m"
+        echo -e "\033[1;31m- DB_USER=${DB_USER}\033[0m"
         echo -e "\033[1;31m- DB_PASSWORD=${DB_PASSWORD}\033[0m\n"
     fi
 else
     echo -e "\033[1;33mSkipping database creation as per user request.\033[0m\n"  # Yellow
 fi
 
-# If no arguments are provided, prompt the user
+# If no arguments are provided, prompt the user if they want to Backup
 if [ -z "$BACKUP_ACTION" ]; then
     # List existing backups and ask user what to do
     echo -e "\033[1;34mChecking for existing backups...\033[0m\n"  # Blue
@@ -331,7 +393,7 @@ case "$BACKUP_ACTION" in
             UNZIP_BACKUP=${UNZIP_BACKUP:-n}
             if [[ "$UNZIP_BACKUP" =~ ^[y]$ ]]; then
                 UNZIP_DIR="/var/backups/${DOMAIN_NAME}_unzip_$(basename ${BACKUP_FILES[$i]} .tar.gz)"
-                sudo mkdir -p "$UNZIP_DIR" && sudo tar -xzf "${BACKUP_FILES[$i]}" -C "$UNZIP_DIR" || { echo -e "\033[1;31mFailed to unzip backup ${BACKUP_FILES[$i]}.\033[0m\n"; }
+                sudo mkdir -p "$UNZIP_DIR" && sudo tar -xzf "${BACKUP_FILES[$i]}" -C "$UNZIP_DIR" --checkpoint=.100 || { echo -e "\033[1;31mFailed to unzip backup ${BACKUP_FILES[$i]}.\033[0m\n"; }
                 echo -e "\033[1;32mBackup ${BACKUP_FILES[$i]} unzipped successfully to $UNZIP_DIR.\033[0m\n"  # Green
             fi
         done
@@ -377,6 +439,11 @@ case "$BACKUP_ACTION" in
         ;;
 esac
 
+# Download WordPress if latest.tar.gz is missing or corrupted
+#cd /tmp
+#sudo apt-get install unzip -y || { echo -e "\033[1;31mFailed to install unzip. Exiting.\033[0m\n"; exit 1; }
+#echo -e "\033[1;33mJust unzip latest.zip?\033[0m\n"  # Yellow
+
 # WordPress Installation Logic
 if [ -d "/var/www/${DOMAIN_NAME}" ]; then
     read -t 30 -p "Already found WordPress site installed for ${DOMAIN_NAME}. Do you want to replace it? (y/N): " REPLACE_WORDPRESS
@@ -393,8 +460,9 @@ fi
 # Download WordPress if latest.tar.gz is missing or corrupted
 if [ ! -f "latest.tar.gz" ]; then
     echo -e "\033[1;34mDownloading WordPress package...\033[0m\n"  # Blue
-    wget https://wordpress.org/latest.tar.gz -O latest.tar.gz || { echo -e "\033[1;31mFailed to download WordPress. Exiting.\033[0m\n"; exit 1; }
-fi
+    #wget https://wordpress.org/latest.tar.gz -O latest.tar.gz || { echo -e "\033[1;31mFailed to download WordPress. Exiting.\033[0m\n"; exit 1; }
+	wget --progress=bar:force https://wordpress.org/latest.tar.gz -O latest.tar.gz || { echo -e "\033[1;31mFailed to download WordPress. Exiting.\033[0m\n"; exit 1; }
+fi 
 
 # Validate the downloaded tar file to ensure it's not corrupted
 if ! tar -tzf latest.tar.gz > /dev/null 2>&1; then
@@ -406,9 +474,12 @@ fi
 if [ ! -d "/var/www/${DOMAIN_NAME}" ]; then
     echo -e "\033[1;34mExtracting WordPress to /tmp/wordpress_unzip\033[0m\n"  # Blue
     mkdir -p /tmp/wordpress_unzip
-    sudo tar -xzf latest.tar.gz -C /tmp/wordpress_unzip --checkpoint=.100 || { echo -e "\033[1;31mFailed to extract WordPress. Exiting.\033[0m\n"; exit 1; }
-    #tar -xzvf latest.tar.gz -C /tmp/wordpress_unzip || { echo -e "\033[1;31mFailed to extract WordPress. Exiting.\033[0m\n"; exit 1; }
+    sudo tar -xzf latest.tar.gz   -C /tmp/wordpress_unzip --checkpoint=.100 || { echo -e "\033[1;31mFailed to extract WordPress. Exiting.\033[0m\n"; exit 1; }
+    sudo rm -rf /var/www/${DOMAIN_NAME}
+	#sudo tar -xzf latest.tar.gz   -C /var/www --checkpoint=.100 || { echo -e "\033[1;31mFailed to extract WordPress. Exiting.\033[0m\n"; exit 1; }
+        #tar -xzvf latest.tar.gz -C /tmp/wordpress_unzip || { echo -e "\033[1;31mFailed to extract WordPress. Exiting.\033[0m\n"; exit 1; }
 
+    #    tar --skip-old-files -xzf latest.tar.gz -C /tmp/wordpress_unzip --checkpoint=.100 
     # Check if the extraction was successful
     if [ ! -d "/tmp/wordpress_unzip/wordpress" ]; then
         echo -e "\033[1;31mFailed to extract WordPress files properly. Exiting.\033[0m\n"  # Red
@@ -418,14 +489,11 @@ if [ ! -d "/var/www/${DOMAIN_NAME}" ]; then
     echo -e "\033[1;34m > DONE. \033[0m\n"  # Blue
     echo -e "\033[1;34m- Rsync WordPress files to /var/www/${DOMAIN_NAME} \033[0m\n"  # Blue
     
-    sudo rsync -ah --ignore-errors --partial /tmp/wordpress_unzip/wordpress/ /var/www/${DOMAIN_NAME}/ || { echo -e "\033[1;31mFailed to copy WordPress files. Exiting.\033[0m\n"; exit 1; }
+    #sudo rsync -ah  --partial /tmp/wordpress_unzip/wordpress/ /var/www/${DOMAIN_NAME}/ || { echo -e "\033[1;31mFailed to copy WordPress files. Exiting.\033[0m\n"; exit 1; }
+    sudo rsync -ah /tmp/wordpress_unzip/wordpress/ /var/www/${DOMAIN_NAME}/
     sudo rm -rf /tmp/wordpress_unzip
 fi
 
-# Set permissions for WordPress directory
-echo -e "\033[1;34mSetting chown and permissions\033[0m\n"  # Blue
-sudo chown -R www-data:www-data /var/www/${DOMAIN_NAME} || { echo -e "\033[1;31mFailed to set ownership for WordPress directory. Exiting.\033[0m\n"; exit 1; }
-sudo chmod -R 750 /var/www/${DOMAIN_NAME} || { echo -e "\033[1;31mFailed to set permissions for WordPress directory. Exiting.\033[0m\n"; exit 1; }
 
 # Move wp-config-sample.php to wp-config.php and set database info
 cd /var/www/${DOMAIN_NAME}
@@ -440,6 +508,15 @@ fi
 
 # Adding a cleanup trap to remove temporary directories on script exit
 trap "sudo rm -rf /tmp/wordpress_unzip; echo -e '\033[1;34mCleanup complete.\033[0m\n'" EXIT
+
+# Set permissions for WordPress directory
+echo -e "\033[1;34mSetting chown and permissions\033[0m\n"  # Blue
+sudo chown -R www-data:www-data /var/www/${DOMAIN_NAME} || { echo -e "\033[1;31mFailed to set ownership for WordPress directory. Exiting.\033[0m\n"; exit 1; }
+sudo chmod -R 750 /var/www/${DOMAIN_NAME} || { echo -e "\033[1;31mFailed to set permissions for WordPress directory. Exiting.\033[0m\n"; exit 1; }
+
+
+# Update wp-config.php
+update_wp_config
 
 # Configure PHP settings for WordPress
 PHP_INI_PATH="/etc/php/8.2/apache2/php.ini"
