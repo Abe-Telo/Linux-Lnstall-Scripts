@@ -212,6 +212,7 @@ PHP_INI_PATH="/etc/php/8.2/apache2/php.ini"
 POST_MAX_SIZE=$(grep -i '^post_max_size' $PHP_INI_PATH | awk -F' = ' '{print $2}' | tr -d 'M')
 UPLOAD_MAX_FILESIZE=$(grep -i '^upload_max_filesize' $PHP_INI_PATH | awk -F' = ' '{print $2}' | tr -d 'M')
 MEMORY_LIMIT=$(grep -i '^memory_limit' $PHP_INI_PATH | awk -F' = ' '{print $2}' | tr -d 'M')
+MAX_EXECUTION_TIME= $(grep -i '^max_execution_time' $PHP_INI_PATH | awk -F' = ' '{print $2}' | tr -d 'M')
 
 if [[ "${POST_MAX_SIZE}" -lt 500 ]]; then
     sudo sed -i "s/post_max_size = .*/post_max_size = 500M/" $PHP_INI_PATH
@@ -224,6 +225,10 @@ fi
 if [[ "${MEMORY_LIMIT}" -lt 256 ]]; then
     sudo sed -i "s/memory_limit = .*/memory_limit = 256M/" $PHP_INI_PATH
 fi
+
+if [[ "${MAX_EXECUTION_TIME}" -lt 256 ]]; then
+    sudo sed -i "s/max_execution_time = .*/max_execution_time = 120/" $PHP_INI_PATH
+fi 
 
 # Create Apache virtual host for WordPress
 VHOST_CONF_PATH="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
