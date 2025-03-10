@@ -1,0 +1,153 @@
+# Optimize Server and Caching Settings:
+# Ensure your cache plugin (e.g., WP Super Cache, W3 Total Cache, WP Rocket) is properly configured and not conflicting with server-level caching.
+# Add Client-Side Caching Headers:
+# You can add caching headers via your .htaccess file. For example, add this block to your root .htaccess (preferably near the top, before the WordPress rules):
+#<IfModule mod_expires.c>
+#    ExpiresActive On
+    # Images: cache for 1 year
+#    ExpiresByType image/jpeg "access plus 1 year"
+#    ExpiresByType image/png "access plus 1 year"
+#    ExpiresByType image/gif "access plus 1 year"
+#    ExpiresByType image/webp "access plus 1 year"
+#    ExpiresByType image/svg+xml "access plus 1 year"
+#    ExpiresByType image/x-icon "access plus 1 year"
+    # CSS and JavaScript: cache for 1 month
+#    ExpiresByType text/css "access plus 1 month"
+#    ExpiresByType application/javascript "access plus 1 month"
+#    ExpiresByType application/x-javascript "access plus 1 month"
+    # Default: cache for 2 days
+#    ExpiresDefault "access plus 2 days"
+#</IfModule>
+
+<IfModule mod_headers.c>
+    # For static assets, add Cache-Control header (adjust max-age as needed)
+    <FilesMatch "\.(jpg|jpeg|png|gif|webp|svg|ico|css|js)$">
+        Header set Cache-Control "max-age=31536000, public"
+    </FilesMatch>
+</IfModule>
+
+
+
+# --- (No Global GEOIP Restriction) ---
+
+# --- Security Headers ---
+<IfModule mod_headers.c>
+#    Header set Content-Security-Policy "default-src 'self';"
+#    Header set Content-Security-Policy "default-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://yourtrustedsource.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "no-referrer-when-downgrade"
+#    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+</IfModule>
+
+# Restrict to State, Cuntry Madule - Must be installed on your device or wordpress will fail. 
+# Please uncomment this when you do have it installed. 
+# --- Enable GeoIP ---
+#<IfModule mod_geoip.c>
+#    GeoIPEnable On
+#</IfModule>
+
+# --- Restrict /wp-admin to US Only ---
+#<IfModule mod_rewrite.c>
+#    RewriteEngine On
+#    RewriteCond %{REQUEST_URI} ^/wp-admin/? [NC]
+#    RewriteCond %{ENV:GEOIP_COUNTRY_CODE} !^US$
+#    RewriteRule .* - [F,L]
+#</IfModule>
+
+#Begin Really Simple Security
+#<IfModule mod_rewrite.c>
+#RewriteEngine on
+#RewriteCond %{HTTPS} !=on [NC]
+#RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+#</IfModule>
+
+#End Really Simple Security
+
+# BEGIN WordPress
+# The directives (lines) between "BEGIN WordPress" and "END WordPress" are
+# dynamically generated, and should only be modified via WordPress filters.
+# Any changes to the directives between these markers will be overwritten.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+
+# END WordPress
+
+# Installed by wordfence. This is only for reffrence.  Not needed by defualt. 
+# Wordfence WAF
+#<IfModule mod_php5.c>
+#	php_value auto_prepend_file '/var/www/DomainName.com/wordfence-waf.php'
+#</IfModule>
+#<IfModule mod_php7.c>
+#	php_value auto_prepend_file '/var/www/DomainName.com/wordfence-waf.php'
+#</IfModule>
+#<IfModule mod_php.c>
+#	php_value auto_prepend_file '/var/www/DomainName.com/wordfence-waf.php'
+#</IfModule>
+
+
+<Files ".user.ini">
+<IfModule mod_authz_core.c>
+#	Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+	Order deny,allow
+	Deny from all
+</IfModule>
+</Files>
+
+# END Wordfence WAF
+
+# --- Disable Directory Browsing ---
+Options -Indexes
+
+# --- Disable XML-RPC (Brute-Force Prevention) ---
+<Files xmlrpc.php>
+    Order Deny,Allow
+    Deny from all
+</Files>
+
+# --- Block PHP Execution in Uploads Directory ---
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/wp-content/uploads/.*\.php$
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# --- Prevent Direct Access to Sensitive Files ---
+<FilesMatch "(^\.htaccess|\.htpasswd|wp-config\.php|readme\.html|license\.txt)">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# --- Block Suspicious Query Strings ---
+<IfModule mod_rewrite.c>
+    RewriteCond %{QUERY_STRING} (\<|%3C).*script.*(\>|%3E) [NC,OR]
+    RewriteCond %{QUERY_STRING} (\<|%3C).*iframe.*(\>|%3E) [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# --- Further Protect Sensitive File Types ---
+<FilesMatch "\.(bak|config|sql|fla|psd|ini|log)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# --- MalCare WAF Protection ---
+#<Files ".user.ini">
+#<IfModule mod_authz_core.c>
+#    #Require all denied
+#</IfModule>
+#<IfModule !mod_authz_core.c>
+#    Order deny,allow
+#    Deny from all
+#</IfModule>
+#</Files>
+# --- END MalCare WAF ---
+ 
