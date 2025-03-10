@@ -42,7 +42,7 @@ echo "Writing new Fail2ban configuration to $CONFIG_FILE..."
 cat > "$CONFIG_FILE" <<'EOF'
 [DEFAULT]
 # List trusted IP addresses below. Adjust as needed.
-ignoreip = 127.0.0.1/8 68.195.27.141
+ignoreip = 127.0.0.1/8 123.123.123.123
 
 [sshd]
 enabled = true
