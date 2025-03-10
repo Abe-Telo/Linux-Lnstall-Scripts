@@ -1,94 +1,114 @@
 #!/bin/bash
-# Full Fail2ban Setup Script for Debian
-# This script checks if Fail2ban is installed, installs it if necessary,
-# backs up any existing configuration, writes a multi-level escalation
-# configuration, and restarts the Fail2ban service.
 
-# Ensure the script is run as root
-if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root. Please use sudo."
-    exit 1
-fi
+# Install Fail2Ban and rsyslog on Debian 12, backup existing config, deploy recommended config, and restart.
 
-echo "Updating package lists..."
-apt-get update
+# Update package lists and install Fail2Ban and rsyslog
+echo "Updating system and installing Fail2Ban and rsyslog..."
+sudo apt update
+sudo apt install -y fail2ban rsyslog
 
-# Check if Fail2ban is installed; if not, install it.
-if ! dpkg -l | grep -q fail2ban; then
-    echo "Fail2ban not found. Installing fail2ban..."
-    apt-get install -y fail2ban
-else
-    echo "Fail2ban is already installed."
-fi
+# Ensure rsyslog is enabled and running
+echo "Enabling and starting rsyslog service..."
+sudo systemctl enable rsyslog
+sudo systemctl start rsyslog
 
-# Optionally warn if vsftpd is not installed (since we're configuring its jail)
-if ! dpkg -l | grep -q vsftpd; then
-    echo "Warning: vsftpd is not installed. If you run an FTP service, consider installing vsftpd."
-fi
+# Ensure Fail2Ban is enabled and running
+echo "Enabling and starting Fail2Ban service..."
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
 
-# Define configuration file paths
 CONFIG_FILE="/etc/fail2ban/jail.local"
 BACKUP_FILE="/etc/fail2ban/jail.local.bak.$(date +%F-%T)"
 
-echo "Backing up existing configuration from $CONFIG_FILE to $BACKUP_FILE..."
-if [ -f "$CONFIG_FILE" ]; then
-    cp "$CONFIG_FILE" "$BACKUP_FILE"
-    echo "Backup complete."
-else
-    echo "No existing configuration found at $CONFIG_FILE."
+# Get the current SSH client IP address
+SSH_IP=$(echo "$SSH_CLIENT" | awk '{print $1}')
+if [ -z "$SSH_IP" ]; then
+    SSH_IP=$(who am i | awk '{print $5}' | sed 's/[()]//g')
 fi
 
-echo "Writing new Fail2ban configuration to $CONFIG_FILE..."
-cat > "$CONFIG_FILE" <<'EOF'
+# Copy default configuration to jail.local if jail.local does not exist
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Creating initial configuration file from default..."
+    sudo cp /etc/fail2ban/jail.conf "$CONFIG_FILE"
+fi
+
+# Backup existing configuration
+if [ -f "$CONFIG_FILE" ]; then
+    echo "Backing up existing configuration to $BACKUP_FILE..."
+    sudo cp "$CONFIG_FILE" "$BACKUP_FILE"
+fi
+
+# Check for running risky services and prompt user
+echo "Checking for active potentially insecure services..."
+SERVICE_CONFIG=""
+for service in vsftpd ftp telnet smb nfs rpc ssh; do
+    if sudo systemctl is-active --quiet "$service"; then
+        read -p "Service '$service' is active. Do you want to add Fail2Ban jail for '$service'? (y/n): " add_service
+        if [[ "$add_service" =~ ^[Yy]$ ]]; then
+            case "$service" in
+                ssh)
+                    SERVICE_CONFIG+=$'\n[sshd]\nenabled = true\nport = ssh\nlogpath = /var/log/auth.log\nmaxretry = 5\nbantime = 900\n'
+                    ;;
+                vsftpd|ftp)
+                    SERVICE_CONFIG+=$'\n[vsftpd]\nenabled = true\nport = ftp\nlogpath = /var/log/vsftpd.log\nmaxretry = 5\nbantime = 900\n'
+                    ;;
+                telnet)
+                    SERVICE_CONFIG+=$'\n[telnet]\nenabled = true\nport = telnet\nlogpath = /var/log/auth.log\nmaxretry = 5\nbantime = 900\n'
+                    ;;
+                smb)
+                    SERVICE_CONFIG+=$'\n[samba]\nenabled = true\nport = samba\nlogpath = /var/log/samba/log.%m\nmaxretry = 5\nbantime = 900\n'
+                    ;;
+                nfs|rpc)
+                    SERVICE_CONFIG+=$'\n[nfs]\nenabled = true\nport = nfs\nlogpath = /var/log/messages\nmaxretry = 5\nbantime = 900\n'
+                    ;;
+            esac
+        fi
+    fi
+done
+
+# Write Fail2Ban configuration based on user choices
+echo "Writing new configuration to $CONFIG_FILE..."
+sudo bash -c "cat > $CONFIG_FILE" <<EOF
 [DEFAULT]
-# List trusted IP addresses below. Adjust as needed.
-ignoreip = 127.0.0.1/8 123.123.123.123
-
-[sshd]
-enabled = true
-port    = ssh
-logpath = /var/log/auth.log
-maxretry = 5
-bantime = 900    ; 15 minutes for the first breach
-
-[vsftpd]
-enabled = true
-port    = ftp
-logpath = /var/log/vsftpd.log
-maxretry = 5
-bantime = 900    ; 15 minutes for FTP breaches
-
+ignoreip = 127.0.0.1/8 $SSH_IP
+$SERVICE_CONFIG
 [recidive2]
 enabled  = true
 logpath  = /var/log/fail2ban.log
-findtime = 86400       ; Look back 24 hours
-maxretry = 5          ; If banned 5 times in 24 hours
-bantime  = 1800       ; Ban for 30 minutes
+findtime = 86400
+maxretry = 5
+bantime  = 1800
 
 [recidive3]
 enabled  = true
 logpath  = /var/log/fail2ban.log
-findtime = 86400       ; 24 hours
-maxretry = 3          ; If banned 3 times in 24 hours
-bantime  = 86400      ; Ban for 1 day
+findtime = 86400
+maxretry = 3
+bantime  = 86400
 
 [recidive4]
 enabled  = true
 logpath  = /var/log/fail2ban.log
-findtime = 172800      ; Look back 48 hours for final escalation
-maxretry = 1          ; If even 1 additional breach occurs in that period
-bantime  = 31536000   ; Ban for 1 year (use 63072000 for 2 years if desired)
+findtime = 172800
+maxretry = 1
+bantime  = 31536000
 EOF
 
-echo "New configuration written to $CONFIG_FILE."
+# Restart Fail2Ban to apply changes
+echo "Restarting Fail2Ban service..."
+sudo systemctl restart fail2ban
 
-echo "Restarting Fail2ban service..."
-systemctl restart fail2ban
+# Wait a few seconds before checking status
+sleep 5
 
-if [ $? -eq 0 ]; then
-    echo "Fail2ban has been restarted successfully."
+# Verify service status
+if sudo systemctl is-active --quiet fail2ban; then
+    echo "Fail2Ban is running successfully."
 else
-    echo "There was an error restarting Fail2ban. Please check the service status."
+    echo "Fail2Ban encountered an issue. Check logs with: sudo journalctl -u fail2ban"
 fi
 
-echo "Setup complete. To check Fail2ban status, run: fail2ban-client status"
+# Display Fail2Ban status
+sudo fail2ban-client status
+
+echo "Fail2Ban installation and configuration complete."
