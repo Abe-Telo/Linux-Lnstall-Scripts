@@ -217,6 +217,11 @@ fi
 # define( 'WPCACHEHOME', '/var/www/domain.com/wp-content/plugins/wp-super-cache/' );
 # define('WP_CACHE', true);
 
+# TODO Enable redis-server 
+# sudo systemctl enable redis-server
+# sudo systemctl start redis-server
+
+
 # Configure PHP settings for WordPress
 # Check current values and only update if necessary
 PHP_INI_PATH="/etc/php/8.2/apache2/php.ini"
