@@ -206,12 +206,16 @@ else
     fi
 fi
 
-# TODO php.ini 
-# zend_opcache.enable=1
-# zend_opcache.enable_cli=1
-# zend_opcache.memory_consumption=128
-# zend_opcache.interned_strings_buffer=8
-# zend_opcache.max_accelerated_files=10000
+# TODO cache php.ini 
+# opcache.enable=1
+# opcache.enable_cli=1
+# opcache.memory_consumption=128
+# opcache.interned_strings_buffer=8
+# opcache.max_accelerated_files=10000
+
+# TODO cache WP-Config.php 
+# define( 'WPCACHEHOME', '/var/www/domain.com/wp-content/plugins/wp-super-cache/' );
+# define('WP_CACHE', true);
 
 # Configure PHP settings for WordPress
 # Check current values and only update if necessary
