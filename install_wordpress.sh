@@ -7,13 +7,17 @@ read -p "Enter your domain name (e.g., example.com): " DOMAIN_NAME
 sudo apt update && sudo apt upgrade -y
 
 # Install Apache, MariaDB, and PHP 8.2
-sudo apt-get install apache2 mariadb-server php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl php8.2-gd php8.2-fpm php8.2-opcache redis-server php8.2-redis libapache2-mod-php wget unzip -y
+sudo apt-get install apache2 mariadb-server php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl php8.2-gd php8.2-fpm php8.2-opcache redis-server php8.2-redis libapache2-mod-php php8.2-imagick php8.2-intl wget unzip -y
 
 # Start and enable Apache and MariaDB
 sudo systemctl start apache2
 sudo systemctl enable apache2
 sudo systemctl start mariadb
 sudo systemctl enable mariadb
+
+# TODO Check if this is needed.
+# sudo phpenmod imagick
+# sudo phpenmod intl
 
 # Secure MariaDB Installation
 # Check if MariaDB root password is already set
