@@ -206,6 +206,7 @@ else
     fi
 fi
 
+# Recommended W3 Total Cache?
 # TODO cache php.ini 
 # opcache.enable=1
 # opcache.enable_cli=1
