@@ -214,12 +214,16 @@ fi
 # opcache.max_accelerated_files=10000
 
 # TODO cache WP-Config.php 
-# define( 'WPCACHEHOME', '/var/www/domain.com/wp-content/plugins/wp-super-cache/' );
+# define( 'WPCACHEHOME', '/var/www/domain.com/wp-content/plugins/     PLUGIN          /' );
 # define('WP_CACHE', true);
 
 # TODO Enable redis-server 
 # sudo systemctl enable redis-server
 # sudo systemctl start redis-server
+
+# TODO Look into sudo apt install memcached php8.2-memcached
+# sudo systemctl enable memcached
+# sudo systemctl start memcached
 
 
 # Configure PHP settings for WordPress
