@@ -7,7 +7,7 @@ read -p "Enter your domain name (e.g., example.com): " DOMAIN_NAME
 sudo apt update && sudo apt upgrade -y
 
 # Install Apache, MariaDB, and PHP 8.2
-sudo apt-get install apache2 mariadb-server php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl php8.2-gd libapache2-mod-php wget unzip -y
+sudo apt-get install apache2 mariadb-server php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl php8.2-gd php8.2-fpm php8.2-opcache libapache2-mod-php wget unzip -y
 
 # Start and enable Apache and MariaDB
 sudo systemctl start apache2
@@ -205,6 +205,13 @@ else
         sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
     fi
 fi
+
+# TODO php.ini 
+# zend_opcache.enable=1
+# zend_opcache.enable_cli=1
+# zend_opcache.memory_consumption=128
+# zend_opcache.interned_strings_buffer=8
+# zend_opcache.max_accelerated_files=10000
 
 # Configure PHP settings for WordPress
 # Check current values and only update if necessary
