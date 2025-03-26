@@ -17,6 +17,33 @@ echo "Enabling and starting Fail2Ban service..."
 sudo systemctl enable fail2ban
 sudo systemctl start fail2ban
 
+# Create or update the recidive2 filter file
+echo "Creating or updating /etc/fail2ban/filter.d/recidive2.conf..."
+sudo bash -c "cat > /etc/fail2ban/filter.d/recidive2.conf" <<'EOF'
+[Definition]
+failregex = ^.*\] Ban <HOST>$
+ignoreregex =
+EOF
+sudo chmod 644 /etc/fail2ban/filter.d/recidive2.conf
+
+# Create or update the recidive3 filter file
+echo "Creating or updating /etc/fail2ban/filter.d/recidive3.conf..."
+sudo bash -c "cat > /etc/fail2ban/filter.d/recidive3.conf" <<'EOF'
+[Definition]
+failregex = ^.*\] Ban <HOST>$
+ignoreregex =
+EOF
+sudo chmod 644 /etc/fail2ban/filter.d/recidive3.conf
+
+# Create or update the recidive4 filter file
+echo "Creating or updating /etc/fail2ban/filter.d/recidive4.conf..."
+sudo bash -c "cat > /etc/fail2ban/filter.d/recidive4.conf" <<'EOF'
+[Definition]
+failregex = ^.*\] Ban <HOST>$
+ignoreregex =
+EOF
+sudo chmod 644 /etc/fail2ban/filter.d/recidive4.conf
+
 CONFIG_FILE="/etc/fail2ban/jail.local"
 BACKUP_FILE="/etc/fail2ban/jail.local.bak.$(date +%F-%T)"
 
@@ -91,7 +118,7 @@ enabled  = true
 logpath  = /var/log/fail2ban.log
 findtime = 172800
 maxretry = 1
-bantime  = 31536000
+bantime  = -1
 EOF
 
 # Restart Fail2Ban to apply changes
