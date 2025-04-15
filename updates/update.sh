@@ -2,20 +2,20 @@
 #
 # check_and_run_scripts.sh
 #
-# This script checks if the following files exist locally:
+# This script checks for two files locally:
 #   1. enable_mysql_auto_restart.sh
 #   2. setup-fail2ban.sh
 #
-# For each file, it downloads the remote version from GitHub if:
-#   - The file does not exist, OR
-#   - The local file size does not match the remote file size.
-#
-# Then, it ensures the local file is executable and runs it.
+# For each file, it:
+#   - Downloads the remote file from GitHub if the local file does not exist,
+#     or if the local file size does not match the remote file size.
+#   - Ensures the file is executable.
+#   - Runs the file, capturing and displaying its output and exit code.
 #
 # Requirements: curl, stat, mktemp
 #
 
-# Function to check, download (if necessary), and run a script.
+# Function to check, update (if needed), and run a script.
 ensure_and_run() {
     local local_file="$1"
     local remote_url="$2"
@@ -24,7 +24,7 @@ ensure_and_run() {
     echo "Processing ${local_file}"
     echo "Remote URL: ${remote_url}"
 
-    # Download the remote file to a temporary file (with no-cache)
+    # Download the remote file to a temporary file (forcing no cache)
     tmp_file=$(mktemp)
     if ! curl -s -L -H 'Cache-Control: no-cache' "${remote_url}" -o "${tmp_file}"; then
         echo "Error downloading remote file from ${remote_url}."
@@ -37,7 +37,7 @@ ensure_and_run() {
         echo "Local file ${local_file} does not exist. Downloading..."
         cp "${tmp_file}" "${local_file}"
     else
-        # Compare file sizes (as a basic check for differences)
+        # Compare file sizes as a basic check for differences.
         local_size=$(stat -c%s "${local_file}")
         remote_size=$(stat -c%s "${tmp_file}")
         echo "Local file size:  ${local_size} bytes"
@@ -65,10 +65,11 @@ ensure_and_run() {
     echo ""
 }
 
-# Main Execution
+########################################
+# Main Execution: Check and Run Each Script
+########################################
 
 ensure_and_run "enable_mysql_auto_restart.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/enable_mysql_auto_restart.sh"
+# ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
 
-ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
-
-echo "All file checks and executions are complete."
+echo "All file checks, updates, and executions are complete."
