@@ -86,4 +86,23 @@ ensure_and_run "enable_mysql_auto_restart.sh" "https://raw.githubusercontent.com
 
 ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
 
+
+# Before modifying wp-config.php, check if it exists.
+if [ -f wp-config.php ]; then
+    ## Testing first before adding it above in main logic. (This is needed for CACHE plugins if ever used.)
+    # Check if WP_CACHE is already defined; if not, insert it before the "That's all, stop editing!" line.
+    if ! grep -q "define( 'WP_CACHE'" wp-config.php; then
+        echo "Adding define('WP_CACHE', true); to wp-config.php"
+        # Look for the standard end-of-config comment and insert before it.
+        if grep -q "That's all, stop editing" wp-config.php; then
+            sudo sed -i "/That'\''s all, stop editing/i define( 'WP_CACHE', true );" wp-config.php
+        else
+            # If the marker is not found, just append it at the end.
+            echo "define( 'WP_CACHE', true );" | sudo tee -a wp-config.php
+        fi
+    fi
+else
+    echo "wp-config.php not found. Skipping WP_CACHE addition."
+fi
+
 echo "All file checks, updates, and executions are complete."
