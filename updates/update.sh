@@ -1,2 +1,2 @@
 #!/bin/bash
-echo "Testing update Idea 2 Testing 123"
+echo "Testing update Idea 3"
