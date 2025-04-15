@@ -6,6 +6,12 @@ To install WordPress, use this one-liner:
 curl -sLO https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/main/install_wordpress.sh && chmod +x install_wordpress.sh && sudo ./install_wordpress.sh
 ```
 
+To check for updates and run it automaticly daily:
+```bash
+wget https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/install_update_function.sh && chmod +x install_update_function.sh && ./install_update_function.sh
+```
+ 
+
 This command will download and execute the script automatically, setting up WordPress with the necessary components for a tested on Debian 12. It is expected to work on other environments, including Debian and Ubuntu, but please test and confirm compatibility..
 
 ## What It Does
