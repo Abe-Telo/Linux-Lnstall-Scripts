@@ -91,16 +91,19 @@ ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/L
 # Add WP_CACHE definition to all site's wp-config.php files
 # based on entries in /root/db_log.txt.
 #
+#
+# Update WP_CACHE in each site's wp-config.php based on domains in /root/db_log.txt.
+#
 
 DB_LOG_FILE="/root/db_log.txt"
 
-# Check if the log file exists.
+# Check if the DB log file exists.
 if [ ! -f "$DB_LOG_FILE" ]; then
     echo "Database log file $DB_LOG_FILE not found. Cannot process domains."
     exit 1
 fi
 
-# Extract unique domains (assumes lines like "domain.com_DB_NAME=...")
+# Extract unique domains.
 domains=$(awk -F'_' '{print $1}' "$DB_LOG_FILE" | sort -u)
 
 echo "Found the following domains from $DB_LOG_FILE:"
@@ -108,24 +111,27 @@ for domain in $domains; do
     echo " - $domain"
 done
 
-# Loop through each domain and update wp-config.php if present.
+# Loop through each domain.
 for domain in $domains; do
     WP_CONFIG="/var/www/${domain}/wp-config.php"
     
     if [ -f "$WP_CONFIG" ]; then
         echo "Processing $WP_CONFIG for domain $domain..."
-        # Check if WP_CACHE is already defined.
-        if ! grep -q "define( 'WP_CACHE'" "$WP_CONFIG"; then
-            echo "Adding define('WP_CACHE', true); to $WP_CONFIG"
-            # Try to insert before the "That's all, stop editing" marker.
-            if grep -q "That's all, stop editing" "$WP_CONFIG"; then
-                sudo sed -i "/That'\''s all, stop editing/i define( 'WP_CACHE', true );" "$WP_CONFIG"
+
+        # Check if WP_CACHE is already defined (case-insensitive).
+        if ! grep -qi "define( *'WP_CACHE'" "$WP_CONFIG"; then
+            echo "WP_CACHE is not defined in $WP_CONFIG."
+            # Look for a marker line; we'll search for "stop editing" (case-insensitive).
+            if grep -qi "stop editing" "$WP_CONFIG"; then
+                echo "Inserting WP_CACHE definition before the marker in $WP_CONFIG."
+                # The sed command inserts our line before the first matching line.
+                sudo sed -i "/[Tt]hat's all,.*stop editing/i define( 'WP_CACHE', true );" "$WP_CONFIG"
             else
-                # If marker not found, append the definition at the end.
+                echo "Marker not found in $WP_CONFIG. Appending WP_CACHE definition at the end."
                 echo "define( 'WP_CACHE', true );" | sudo tee -a "$WP_CONFIG" >/dev/null
             fi
         else
-            echo "WP_CACHE is already defined in $WP_CONFIG. Skipping."
+            echo "WP_CACHE is already defined in $WP_CONFIG. Skipping insertion for $domain."
         fi
     else
         echo "wp-config.php not found in /var/www/${domain}. Skipping domain $domain."
@@ -133,6 +139,7 @@ for domain in $domains; do
 done
 
 echo "WP_CACHE update complete."
+
 ################################################
 
 echo "All file checks, updates, and executions are complete."
