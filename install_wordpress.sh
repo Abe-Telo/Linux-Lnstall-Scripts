@@ -1,7 +1,40 @@
 #!/bin/bash
+#
+# install_wordpress.sh
+#
+# This script installs and configures a WordPress site
+# along with Apache, MariaDB, PHP 8.2, and various performance/
+# security tools. It also prompts the user to optionally install
+# automatic recommended updates from the update folder.
+#
+# ------------------------------------------------------------------------------
+# At the beginning, the script asks for the domain name and email address.
+# Then, it offers the option to install automatic recommended updates from the
+# update folder automatically (via a separate installer script).
+# ------------------------------------------------------------------------------
 
 # Ask for domain name and email address at the beginning
 read -p "Enter your domain name (e.g., example.com): " DOMAIN_NAME
+
+# -------------------------------------------------------------------------------
+# Prompt: Do you want to install automatic recommended updates from the update folder automatically?
+read -p "Do you want to install automatic recommended updates from github update folder automatically? (Y/n): " INSTALL_AUTOMATIC_UPDATES
+INSTALL_AUTOMATIC_UPDATES=${INSTALL_AUTOMATIC_UPDATES:-Y}
+if [[ "$INSTALL_AUTOMATIC_UPDATES" =~ ^[Yy]$ ]]; then
+    echo "Installing automatic recommended updates..."
+    # Check if the update installer script exists in the current directory.
+    if [ -f "./install_update_function.sh" ]; then
+        ./install_update_function.sh
+    else
+        echo "install_update_function.sh not found. Attempting to download it from GitHub..."
+        # Download the installer from GitHub. A
+        curl -L https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/updates/install_update_function.sh -o install_update_function.sh
+        chmod +x install_update_function.sh
+        ./install_update_function.sh
+    fi
+fi
+# -------------------------------------------------------------------------------
+
 
 # Update and upgrade the system
 sudo apt update && sudo apt upgrade -y
