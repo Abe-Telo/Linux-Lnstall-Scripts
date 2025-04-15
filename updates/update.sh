@@ -95,46 +95,64 @@ ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/L
 # Update WP_CACHE in each site's wp-config.php based on domains in /root/db_log.txt.
 #
 
+# This snippet reads /root/db_log.txt to extract domain keys and then
+# for each domain, checks if a corresponding wp-config.php file exists in
+# /var/www/<domain>/wp-config.php or /var/www/<domain with underscores replaced by dots>/wp-config.php.
+# If found, it checks whether "WP_CACHE" is defined. If not, it inserts 
+# "define( 'WP_CACHE', true );" before the "stop editing" marker or at the end if that marker is not present.
+#
+
 DB_LOG_FILE="/root/db_log.txt"
 
-# Check if the DB log file exists.
+# Ensure the DB log exists.
 if [ ! -f "$DB_LOG_FILE" ]; then
-    echo "Database log file $DB_LOG_FILE not found. Cannot process domains."
+    echo "Database log file $DB_LOG_FILE not found. Exiting."
     exit 1
 fi
 
-# Extract unique domains.
-domains=$(awk -F'_' '{print $1}' "$DB_LOG_FILE" | sort -u)
+# Extract unique domain keys from the log.
+# Assumes lines like "rikirose.com_DB_NAME=..." or "rikirose_com_DB_NAME=..."
+domains=$(grep '_DB_NAME=' "$DB_LOG_FILE" | cut -d '=' -f1 | sed 's/_DB_NAME//' | sort -u)
 
-echo "Found the following domains from $DB_LOG_FILE:"
+echo "Found the following domain keys in $DB_LOG_FILE:"
+echo "$domains"
+
+# Loop through each domain key.
 for domain in $domains; do
-    echo " - $domain"
-done
+    # Create the dot-version by replacing underscores with dots.
+    domain_dot=$(echo "$domain" | tr '_' '.')
+    echo "Processing domain variants: '$domain' and '$domain_dot'"
 
-# Loop through each domain.
-for domain in $domains; do
-    WP_CONFIG="/var/www/${domain}/wp-config.php"
-    
-    if [ -f "$WP_CONFIG" ]; then
-        echo "Processing $WP_CONFIG for domain $domain..."
+    # Initialize an empty variable to hold the wp-config.php path.
+    wp_config=""
 
-        # Check if WP_CACHE is already defined (case-insensitive).
-        if ! grep -qi "define( *'WP_CACHE'" "$WP_CONFIG"; then
-            echo "WP_CACHE is not defined in $WP_CONFIG."
-            # Look for a marker line; we'll search for "stop editing" (case-insensitive).
-            if grep -qi "stop editing" "$WP_CONFIG"; then
-                echo "Inserting WP_CACHE definition before the marker in $WP_CONFIG."
-                # The sed command inserts our line before the first matching line.
-                sudo sed -i "/[Tt]hat's all,.*stop editing/i define( 'WP_CACHE', true );" "$WP_CONFIG"
-            else
-                echo "Marker not found in $WP_CONFIG. Appending WP_CACHE definition at the end."
-                echo "define( 'WP_CACHE', true );" | sudo tee -a "$WP_CONFIG" >/dev/null
-            fi
-        else
-            echo "WP_CACHE is already defined in $WP_CONFIG. Skipping insertion for $domain."
-        fi
+    # Check for wp-config.php in /var/www/<domain>
+    if [ -f "/var/www/${domain}/wp-config.php" ]; then
+         wp_config="/var/www/${domain}/wp-config.php"
+         echo "Found wp-config.php at /var/www/${domain}/wp-config.php"
+    fi
+    # Also check /var/www/<domain_dot>/wp-config.php; if both exist, the latter will override.
+    if [ -f "/var/www/${domain_dot}/wp-config.php" ]; then
+         wp_config="/var/www/${domain_dot}/wp-config.php"
+         echo "Found wp-config.php at /var/www/${domain_dot}/wp-config.php"
+    fi
+
+    if [ -n "$wp_config" ]; then
+         echo "Updating WP_CACHE in $wp_config"
+         # If WP_CACHE isn't already defined (case-insensitive check)
+         if ! grep -qi "define( *'WP_CACHE'" "$wp_config"; then
+             # If the typical marker exists, insert before it.
+             if grep -qi "stop editing" "$wp_config"; then
+                 sudo sed -i "/[Tt]hat's all,.*stop editing/i define( 'WP_CACHE', true );" "$wp_config"
+             else
+                 # Otherwise append at the end.
+                 echo "define( 'WP_CACHE', true );" | sudo tee -a "$wp_config" >/dev/null
+             fi
+         else
+             echo "WP_CACHE is already defined in $wp_config, skipping."
+         fi
     else
-        echo "wp-config.php not found in /var/www/${domain}. Skipping domain $domain."
+         echo "No wp-config.php found for domain variants '$domain' or '$domain_dot'."
     fi
 done
 
