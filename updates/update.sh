@@ -1,66 +1,74 @@
 #!/bin/bash
 #
-# check_files.sh
+# check_and_run_scripts.sh
 #
-# This script checks if two local files exist and compares their file sizes
-# with the corresponding remote files on GitHub.
+# This script checks if the following files exist locally:
+#   1. enable_mysql_auto_restart.sh
+#   2. setup-fail2ban.sh
 #
-# It checks:
-#   1. enable_mysql_auto_restart.sh against its GitHub version.
-#   2. setup-fail2ban.sh against its GitHub version.
+# For each file, it downloads the remote version from GitHub if:
+#   - The file does not exist, OR
+#   - The local file size does not match the remote file size.
+#
+# Then, it ensures the local file is executable and runs it.
 #
 # Requirements: curl, stat, mktemp
 #
 
-# Function to compare a local file with a remote file
-check_file() {
+# Function to check, download (if necessary), and run a script.
+ensure_and_run() {
     local local_file="$1"
     local remote_url="$2"
-    
+
     echo "----------------------------------------"
-    echo "Checking if ${local_file} exists and matches remote file:"
-    echo "${remote_url}"
-    
-    if [ ! -f "${local_file}" ]; then
-        echo "Local file ${local_file} does not exist."
+    echo "Processing ${local_file}"
+    echo "Remote URL: ${remote_url}"
+
+    # Download the remote file to a temporary file (with no-cache)
+    tmp_file=$(mktemp)
+    if ! curl -s -L -H 'Cache-Control: no-cache' "${remote_url}" -o "${tmp_file}"; then
+        echo "Error downloading remote file from ${remote_url}."
+        rm -f "${tmp_file}"
         return 1
     fi
 
-    # Download the remote file to a temporary file.
-    tmp_file=$(mktemp)
-    if ! curl -s -L "${remote_url}" -o "${tmp_file}"; then
-        echo "Error downloading remote file from ${remote_url}."
-        rm -f "${tmp_file}"
-        return 2
-    fi
-
-    # Get file sizes for local and downloaded remote file.
-    local_size=$(stat -c%s "${local_file}")
-    remote_size=$(stat -c%s "${tmp_file}")
-
-    echo "Local file size:  ${local_size} bytes"
-    echo "Remote file size: ${remote_size} bytes"
-
-    if [ "${local_size}" -eq "${remote_size}" ]; then
-        echo "${local_file} exists and matches the remote file size."
+    # If the local file does not exist, download it.
+    if [ ! -f "${local_file}" ]; then
+        echo "Local file ${local_file} does not exist. Downloading..."
+        cp "${tmp_file}" "${local_file}"
     else
-        echo "${local_file} exists but does NOT match the remote file size."
+        # Compare file sizes (as a basic check for differences)
+        local_size=$(stat -c%s "${local_file}")
+        remote_size=$(stat -c%s "${tmp_file}")
+        echo "Local file size:  ${local_size} bytes"
+        echo "Remote file size: ${remote_size} bytes"
+        if [ "${local_size}" -ne "${remote_size}" ]; then
+            echo "Local file ${local_file} does not match the remote version. Updating..."
+            cp "${tmp_file}" "${local_file}"
+        else
+            echo "Local file ${local_file} matches the remote version."
+        fi
     fi
 
-    # Cleanup temporary file.
+    # Clean up the temporary file.
     rm -f "${tmp_file}"
+
+    # Ensure the file is executable.
+    chmod +x "${local_file}"
+
+    # Run the file.
+    echo "Running ${local_file}..."
+    ./"${local_file}"
+    run_exit=$?
+    echo "${local_file} finished with exit code ${run_exit}."
     echo "----------------------------------------"
     echo ""
 }
 
-########################################
-# Main Script Execution
-########################################
+# Main Execution
 
-# Check enable_mysql_auto_restart.sh
-check_file "enable_mysql_auto_restart.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/enable_mysql_auto_restart.sh"
+ensure_and_run "enable_mysql_auto_restart.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/enable_mysql_auto_restart.sh"
 
-# Check setup-fail2ban.sh
-check_file "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
+ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
 
-echo "File comparison checks are complete."
+echo "All file checks and executions are complete."
