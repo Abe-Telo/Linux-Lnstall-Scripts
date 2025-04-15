@@ -39,7 +39,7 @@ fi
 # Update and upgrade the system
 sudo apt update && sudo apt upgrade -y
 
-# Install Apache, MariaDB, and PHP 8.2
+# Install Apache, MariaDB, and PHP 8.2 along with dependencies
 sudo apt-get install apache2 mariadb-server php8.2 php8.2-cli php8.2-common php8.2-imap php8.2-redis php8.2-snmp php8.2-xml php8.2-mysqli php8.2-zip php8.2-mbstring php8.2-curl php8.2-gd php8.2-fpm php8.2-opcache redis-server php-redis php8.2-redis libapache2-mod-php php8.2-imagick memcached php-memcached php8.2-intl wget unzip -y
 
 # Start and enable Apache and MariaDB
@@ -242,6 +242,20 @@ else
         sudo sed -i "s/define( 'DB_PASSWORD', 'password_here' )/define( 'DB_PASSWORD', '${DB_PASSWORD_ESCAPED}' )/" wp-config.php || { echo "Error: Failed to set DB_PASSWORD in wp-config.php"; exit 1; }
     fi
 fi
+
+## Testing first before adding it above in main logic. (This is needed for CACHE plugins if ever used. 
+# Check if WP_CACHE is already defined; if not, insert it before the "That's all, stop editing!" line.
+if ! grep -q "define( 'WP_CACHE'" wp-config.php; then
+    echo "Adding define('WP_CACHE', true); to wp-config.php"
+    # Look for the standard end-of-config comment and insert before it.
+    if grep -q "That's all, stop editing" wp-config.php; then
+        sudo sed -i "/That'\''s all, stop editing/i define( 'WP_CACHE', true );" wp-config.php
+    else
+        # If the marker is not found, just append it at the end.
+        echo "define( 'WP_CACHE', true );" | sudo tee -a wp-config.php
+    fi
+fi
+
 
 # Recommended W3 Total Cache?
 # TODO cache php.ini 
