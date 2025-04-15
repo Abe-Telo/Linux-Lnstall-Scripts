@@ -10,9 +10,13 @@
 #   - Downloads the remote file from GitHub if the local file does not exist,
 #     or if the local file size does not match the remote file size.
 #   - Ensures the file is executable.
-#   - Runs the file, capturing and displaying its output and exit code.
+#   - Runs the file.
 #
-# Requirements: curl, stat, mktemp
+# For files that are known to be interactive (like setup-fail2ban.sh),
+# the script will automatically pipe in the recommended (default)
+# accepted prompts using the "yes" command.
+#
+# Requirements: curl, stat, mktemp, yes
 #
 
 # Function to check, update (if needed), and run a script.
@@ -57,9 +61,18 @@ ensure_and_run() {
     chmod +x "${local_file}"
 
     # Run the file.
-    echo "Running ${local_file}..."
-    ./"${local_file}"
-    run_exit=$?
+    # If the file is setup-fail2ban.sh (which is interactive), auto-accept prompts.
+    if [ "${local_file}" == "setup-fail2ban.sh" ]; then
+        echo "Running ${local_file} with auto-accepted prompts..."
+        # Pipe "yes" to automatically send "y" to any prompt.
+        yes | ./"${local_file}"
+        run_exit=$?
+    else
+        echo "Running ${local_file}..."
+        ./"${local_file}"
+        run_exit=$?
+    fi
+
     echo "${local_file} finished with exit code ${run_exit}."
     echo "----------------------------------------"
     echo ""
@@ -70,6 +83,7 @@ ensure_and_run() {
 ########################################
 
 ensure_and_run "enable_mysql_auto_restart.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/enable_mysql_auto_restart.sh"
-# ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
+
+ensure_and_run "setup-fail2ban.sh" "https://raw.githubusercontent.com/Abe-Telo/Linux-Lnstall-Scripts/refs/heads/main/setup-fail2ban.sh"
 
 echo "All file checks, updates, and executions are complete."
